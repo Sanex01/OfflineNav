@@ -199,7 +199,7 @@ class MainActivity : Activity() {
             banner.setBackgroundColor(if (s.alertType == "cam") 0xEED32F2F.toInt() else 0xEEF57C00.toInt())
             banner.visibility = View.VISIBLE
         }
-        status.text = t
+        status.text = "build v2-carto\n" + t
         bMode.text = if (s.carMode) "Авто" else "Пешком"
         bVoice.text = if (s.voice) "Голос ✓" else "Голос ✗"
         bMock.text = if (s.mockUser) "Подмена ✓" else "Подмена ✗"
