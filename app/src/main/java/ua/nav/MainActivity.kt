@@ -53,15 +53,16 @@ class MainActivity : Activity() {
     private var shownRoute: List<GeoPoint>? = null
     private val ui = object : Runnable { override fun run() { refresh(); h.postDelayed(this, 500) } }
     private val svc get() = NavService.inst
+    private val onlineSrc = org.osmdroid.tileprovider.tilesource.XYTileSource("CartoLight", 0, 19, 256, ".png", arrayOf("https://a.basemaps.cartocdn.com/light_all/", "https://b.basemaps.cartocdn.com/light_all/", "https://c.basemaps.cartocdn.com/light_all/"), "© OpenStreetMap contributors © CARTO")
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         base = File(getExternalFilesDir(null), "osmdroid").also { it.mkdirs() }
-        Configuration.getInstance().apply { userAgentValue = packageName; osmdroidBasePath = base; osmdroidTileCache = File(base, "tiles") }
+        Configuration.getInstance().apply { userAgentValue = "OfflineNav/1.0 (+https://github.com/Sanex01/OfflineNav)"; osmdroidBasePath = base; osmdroidTileCache = File(base, "tiles") }
 
         map = MapView(this).apply {
-            setMultiTouchControls(true); setTileSource(TileSourceFactory.MAPNIK)
+            setMultiTouchControls(true); setTileSource(onlineSrc)
             controller.setZoom(15.0); controller.setCenter(GeoPoint(50.45, 30.52))
             setOnTouchListener { _, e -> if (e.action == MotionEvent.ACTION_DOWN) follow = false; false }
         }
@@ -169,7 +170,7 @@ class MainActivity : Activity() {
             val p = OfflineTileProvider(SimpleRegisterReceiver(this), arrayOf(f))
             map.tileProvider = p
             val src = p.archives.firstOrNull()?.tileSources?.firstOrNull()
-            map.setTileSource(if (src != null) FileBasedTileSource.getSource(src) else TileSourceFactory.MAPNIK)
+            map.setTileSource(if (src != null) FileBasedTileSource.getSource(src) else onlineSrc)
             map.setUseDataConnection(false); map.invalidate()
             Toast.makeText(this, "Офлайн-карта: ${f.name}", Toast.LENGTH_SHORT).show()
         } catch (e: Exception) { Toast.makeText(this, "Ошибка карты: ${e.message}", Toast.LENGTH_LONG).show() }
