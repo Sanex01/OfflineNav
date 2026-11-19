@@ -58,7 +58,7 @@ class MainActivity : Activity() {
         super.onCreate(b)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         base = File(getExternalFilesDir(null), "osmdroid").also { it.mkdirs() }
-        Configuration.getInstance().apply { userAgentValue = "OfflineNav/1.0 (+https://github.com/Sanex01/OfflineNav)"; osmdroidBasePath = base; osmdroidTileCache = File(base, "tiles") }
+        Configuration.getInstance().apply { userAgentValue = packageName; osmdroidBasePath = base; osmdroidTileCache = File(base, "tiles") }
 
         map = MapView(this).apply {
             setMultiTouchControls(true); setTileSource(TileSourceFactory.MAPNIK)
