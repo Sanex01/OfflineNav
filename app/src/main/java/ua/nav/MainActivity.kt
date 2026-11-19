@@ -53,10 +53,10 @@ class MainActivity : Activity() {
     private var shownRoute: List<GeoPoint>? = null
     private val ui = object : Runnable { override fun run() { refresh(); h.postDelayed(this, 500) } }
     private val svc get() = NavService.inst
-    // Онлайн-источник: CARTO (данные OSM). Используется только если нет офлайн-файла карты.
-    private val onlineSrc = org.osmdroid.tileprovider.tilesource.XYTileSource("CartoLight", 0, 19, 256, ".png",
-        arrayOf("https://a.basemaps.cartocdn.com/light_all/", "https://b.basemaps.cartocdn.com/light_all/", "https://c.basemaps.cartocdn.com/light_all/"),
-        "© OpenStreetMap contributors © CARTO")
+    // Онлайн-источник: стандартные плитки OSM (один хост, как требует tile usage policy) + нормальный User-Agent.
+    // Это только запасной вариант: основной режим приложения — офлайн-карта.
+    private val onlineSrc = org.osmdroid.tileprovider.tilesource.XYTileSource("OSM", 0, 19, 256, ".png",
+        arrayOf("https://tile.openstreetmap.org/"), "© OpenStreetMap contributors")
     // Заглушка для MBTiles (в них нет имени источника). Без URL-ов, из сети ничего не скачает.
     private val offlineSrc = org.osmdroid.tileprovider.tilesource.XYTileSource("OfflineMap", 0, 19, 256, ".png", arrayOf(""))
 
@@ -80,7 +80,7 @@ class MainActivity : Activity() {
     private fun probeOnline() {
         Thread {
             val msg = try {
-                val c = java.net.URL("https://a.basemaps.cartocdn.com/light_all/0/0/0.png").openConnection() as java.net.HttpURLConnection
+                val c = java.net.URL("https://tile.openstreetmap.org/0/0/0.png").openConnection() as java.net.HttpURLConnection
                 c.setRequestProperty("User-Agent", Configuration.getInstance().userAgentValue)
                 c.connectTimeout = 5000; c.readTimeout = 5000
                 val code = c.responseCode; c.disconnect()
@@ -145,7 +145,7 @@ class MainActivity : Activity() {
             addView(bar, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM))
         })
         if (offFile != null) loadOffline(offFile)
-        else { Toast.makeText(this, "Онлайн-карта (CARTO). Для работы без сети загрузите офлайн-карту: «Карта»", Toast.LENGTH_LONG).show(); probeOnline() }
+        else { Toast.makeText(this, "Онлайн-карта (OpenStreetMap). Для работы без сети загрузите офлайн-карту: «Карта»", Toast.LENGTH_LONG).show(); probeOnline() }
 
         val need = mutableListOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACTIVITY_RECOGNITION)
         if (Build.VERSION.SDK_INT >= 31) need.add(Manifest.permission.BLUETOOTH_CONNECT)
@@ -199,7 +199,7 @@ class MainActivity : Activity() {
             banner.setBackgroundColor(if (s.alertType == "cam") 0xEED32F2F.toInt() else 0xEEF57C00.toInt())
             banner.visibility = View.VISIBLE
         }
-        status.text = "build v2-carto\n" + t
+        status.text = "build v3-osm\n" + t
         bMode.text = if (s.carMode) "Авто" else "Пешком"
         bVoice.text = if (s.voice) "Голос ✓" else "Голос ✗"
         bMock.text = if (s.mockUser) "Подмена ✓" else "Подмена ✗"
