@@ -53,16 +53,55 @@ class MainActivity : Activity() {
     private var shownRoute: List<GeoPoint>? = null
     private val ui = object : Runnable { override fun run() { refresh(); h.postDelayed(this, 500) } }
     private val svc get() = NavService.inst
-    private val onlineSrc = org.osmdroid.tileprovider.tilesource.XYTileSource("CartoLight", 0, 19, 256, ".png", arrayOf("https://a.basemaps.cartocdn.com/light_all/", "https://b.basemaps.cartocdn.com/light_all/", "https://c.basemaps.cartocdn.com/light_all/"), "© OpenStreetMap contributors © CARTO")
+    // Онлайн-источник: CARTO (данные OSM). Используется только если нет офлайн-файла карты.
+    private val onlineSrc = org.osmdroid.tileprovider.tilesource.XYTileSource("CartoLight", 0, 19, 256, ".png",
+        arrayOf("https://a.basemaps.cartocdn.com/light_all/", "https://b.basemaps.cartocdn.com/light_all/", "https://c.basemaps.cartocdn.com/light_all/"),
+        "© OpenStreetMap contributors © CARTO")
+    // Заглушка для MBTiles (в них нет имени источника). Без URL-ов, из сети ничего не скачает.
+    private val offlineSrc = org.osmdroid.tileprovider.tilesource.XYTileSource("OfflineMap", 0, 19, 256, ".png", arrayOf(""))
+
+    private val offlineExt = setOf("zip", "mbtiles", "sqlite", "gemf")
+    private fun findOffline(): File? =
+        base.listFiles()?.firstOrNull { it.isFile && it.extension.lowercase() in offlineExt }
+
+    /** Вызывать первым делом в onCreate, до создания MapView. */
+    private fun initOsmdroid() {
+        Configuration.getInstance().apply {
+            userAgentValue = "OfflineNav/1.0 (Android ${android.os.Build.VERSION.RELEASE}; +https://github.com/Sanex01/OfflineNav)"
+            osmdroidBasePath = base
+            osmdroidTileCache = File(base, "tiles")
+            tileDownloadThreads = 2            // меньше параллельных загрузок
+            tileFileSystemThreads = 2
+            tileDownloadMaxQueueSize = 40
+        }
+    }
+
+    /** Проверяет один тайл онлайн-сервера и сообщает пользователю, если доступ закрыт. */
+    private fun probeOnline() {
+        Thread {
+            val msg = try {
+                val c = java.net.URL("https://a.basemaps.cartocdn.com/light_all/0/0/0.png").openConnection() as java.net.HttpURLConnection
+                c.setRequestProperty("User-Agent", Configuration.getInstance().userAgentValue)
+                c.connectTimeout = 5000; c.readTimeout = 5000
+                val code = c.responseCode; c.disconnect()
+                if (code in 200..299) null
+                else "Онлайн-тайлы недоступны (HTTP $code). Загрузите офлайн-карту кнопкой «Карта»"
+            } catch (e: Exception) { "Нет связи с сервером карт. Загрузите офлайн-карту кнопкой «Карта»" }
+            if (msg != null) runOnUiThread { Toast.makeText(this, msg, Toast.LENGTH_LONG).show() }
+        }.start()
+    }
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
-        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         base = File(getExternalFilesDir(null), "osmdroid").also { it.mkdirs() }
-        Configuration.getInstance().apply { userAgentValue = "OfflineNav/1.0 (+https://github.com/Sanex01/OfflineNav)"; osmdroidBasePath = base; osmdroidTileCache = File(base, "tiles") }
+        initOsmdroid()                                   // User-Agent и лимиты — до MapView
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
+        val offFile = findOffline()
         map = MapView(this).apply {
-            setMultiTouchControls(true); setTileSource(onlineSrc)
+            setMultiTouchControls(true)
+            setUseDataConnection(offFile == null)        // есть офлайн-карта → сеть выключена с самого начала
+            if (offFile == null) setTileSource(onlineSrc)
             controller.setZoom(15.0); controller.setCenter(GeoPoint(50.45, 30.52))
             setOnTouchListener { _, e -> if (e.action == MotionEvent.ACTION_DOWN) follow = false; false }
         }
@@ -105,7 +144,8 @@ class MainActivity : Activity() {
                 FrameLayout.LayoutParams(-1, -2, Gravity.TOP))
             addView(bar, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM))
         })
-        base.listFiles()?.firstOrNull { it.extension.lowercase() in setOf("zip", "mbtiles", "sqlite", "gemf") }?.let { loadOffline(it) }
+        if (offFile != null) loadOffline(offFile)
+        else { Toast.makeText(this, "Онлайн-карта (CARTO). Для работы без сети загрузите офлайн-карту: «Карта»", Toast.LENGTH_LONG).show(); probeOnline() }
 
         val need = mutableListOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACTIVITY_RECOGNITION)
         if (Build.VERSION.SDK_INT >= 31) need.add(Manifest.permission.BLUETOOTH_CONNECT)
@@ -167,13 +207,19 @@ class MainActivity : Activity() {
 
     private fun loadOffline(f: File) {
         try {
+            map.setUseDataConnection(false)              // онлайн полностью выключен
             val p = OfflineTileProvider(SimpleRegisterReceiver(this), arrayOf(f))
             map.tileProvider = p
             val src = p.archives.firstOrNull()?.tileSources?.firstOrNull()
-            map.setTileSource(if (src != null) FileBasedTileSource.getSource(src) else onlineSrc)
+            map.setTileSource(if (src != null) FileBasedTileSource.getSource(src) else offlineSrc)
             map.setUseDataConnection(false); map.invalidate()
-            Toast.makeText(this, "Офлайн-карта: ${f.name}", Toast.LENGTH_SHORT).show()
-        } catch (e: Exception) { Toast.makeText(this, "Ошибка карты: ${e.message}", Toast.LENGTH_LONG).show() }
+            Toast.makeText(this, "Офлайн-карта: ${f.name} (сеть выключена)", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            // файл битый — возвращаем онлайн-режим, чтобы не остаться без карты
+            map.setUseDataConnection(true); map.setTileSource(onlineSrc); map.invalidate()
+            Toast.makeText(this, "Ошибка офлайн-карты: ${e.message}. Включена онлайн-карта", Toast.LENGTH_LONG).show()
+            probeOnline()
+        }
     }
 
     @Deprecated("Deprecated in Java")
